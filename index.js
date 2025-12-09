@@ -16,7 +16,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(
   cors({
     origin: ["http://localhost:5173"],
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PUT","PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
   })
@@ -40,6 +40,9 @@ const client = new MongoClient(uri, {
 
 const verifyToken = async (req, res, next) => {
   const token = req.headers.authorization.split(" ")[1];
+  if (!token) {
+    return res.status(401).send("Unauthorized: No token provided");
+  }
   try {
     const decoded = await admin.auth().verifyIdToken(token);
     req.token_email = decoded.email;
@@ -92,7 +95,7 @@ const run = async () => {
         name,
         email,
         photoURL,
-        role:buyer,
+        role:"buyer",
         status:"pending"
       };
       await users.insertOne(user);
@@ -110,6 +113,35 @@ const run = async () => {
     });
      
 
+
+
+    // Admin Routes
+    app.patch("/admin/user-status/:email", verifyToken, async (req, res) => {
+      const email = decodeURIComponent(req.params.email);
+      const { status } = req.body;
+      const token_email = req.token_email;
+      const user = await users.findOne({ email });
+      const loggedInUser = await users.findOne({ email: token_email });
+      if (!user) {
+        res.status(404).json("User not found");
+        return;
+      }
+      if(loggedInUser.role == "admin"){
+        await users.updateOne({ email }, { $set: { status } });
+        res.status(200).json("User status updated");
+      }
+      
+    });
+
+
+    app.get("/admin/users", verifyToken, async (req, res) => {
+      const user = await users.find().toArray();
+      if (!user) {
+        res.status(404).json("User not found");
+        return;
+      }
+      res.status(200).json(user);
+    });
 
   } catch (error) {
     console.error("Error connecting to MongoDB:", error);
