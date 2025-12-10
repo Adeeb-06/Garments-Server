@@ -155,7 +155,6 @@ const run = async () => {
             payment,
           } = req.body;
 
-        
           const product = {
             product_name,
             product_description,
@@ -164,13 +163,28 @@ const run = async () => {
             available_quantity,
             min_order,
             images,
-            payment,};
-            await products.insertOne(product);
-            res.status(201).json("Product Created");
-          
+            payment,
+          };
+          await products.insertOne(product);
+          res.status(201).json("Product Created");
         } catch (error) {
           res.status(400).json(error);
         }
+      }
+    });
+
+    app.get("/products-management", verifyToken, async (req, res) => {
+      const token_email = req.token_email;
+      const loggedInUser = await users.findOne({ email: token_email });
+      if (loggedInUser.role == "manager" || "admin") {
+        try {
+          const productsData = await products.find({},{projection:{_id:0, product_name:1,price:1,images:1,payment:1}}).toArray();
+          res.status(200).json(productsData);
+        } catch (error) {
+          res.status(400).json(error.message);
+        }
+      } else{
+        res.status(401).json("Unauthorized: No Access");
       }
     });
   } catch (error) {
