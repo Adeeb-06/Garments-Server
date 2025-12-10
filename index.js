@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import { MongoClient, ServerApiVersion } from "mongodb";
+import { MongoClient, ObjectId, ServerApiVersion } from "mongodb";
 import admin from "firebase-admin";
 
 dotenv.config();
@@ -138,6 +138,29 @@ const run = async () => {
       res.status(200).json(user);
     });
 
+    app.patch("/admin/product-status/:id", verifyToken, async (req, res) => {
+      const token_email = req.token_email;
+      const loggedInUser = await users.findOne({ email: token_email });
+      if (loggedInUser.role == "admin") {
+        try {
+          const id = req.params.id;
+          const { onHomePage } = req.body;
+          const product = await products.findOne({ _id: new ObjectId(id) });
+          if (!product) {
+            res.status(404).json("Product not found");
+            return;
+          }
+          await products.updateOne(
+            { _id: new ObjectId(id) },
+            { $set: { onHomePage } }
+          );
+          res.status(200).json("Product status updated");
+        } catch (error) {
+          res.status(400).json(error);
+        }
+      }
+    });
+
     //Manager Routes
     app.post("/manager/create-product", verifyToken, async (req, res) => {
       const token_email = req.token_email;
@@ -164,6 +187,7 @@ const run = async () => {
             min_order,
             images,
             payment,
+            onHomePage: false,
           };
           await products.insertOne(product);
           res.status(201).json("Product Created");
@@ -178,15 +202,115 @@ const run = async () => {
       const loggedInUser = await users.findOne({ email: token_email });
       if (loggedInUser.role == "manager" || "admin") {
         try {
-          const productsData = await products.find({},{projection:{_id:0, product_name:1,price:1,images:1,payment:1}}).toArray();
+          const productsData = await products
+            .find(
+              {},
+              {
+                projection: {
+                  product_name: 1,
+                  price: 1,
+                  images: 1,
+                  payment: 1,
+                },
+              }
+            )
+            .toArray();
           res.status(200).json(productsData);
         } catch (error) {
           res.status(400).json(error.message);
         }
-      } else{
+      } else {
         res.status(401).json("Unauthorized: No Access");
       }
     });
+
+    app.get("/product/:id", verifyToken, async (req, res) => {
+      const token_email = req.token_email;
+      const loggedInUser = await users.findOne({ email: token_email });
+      if (loggedInUser.role == "manager" || "admin") {
+        try {
+          const id = req.params.id;
+          const product = await products.findOne({ _id: new ObjectId(id) });
+          if (!product) {
+            res.status(404).json("Product not found");
+            return;
+          }
+          res.status(200).json(product);
+        } catch (error) {
+          res.status(400).json(error);
+        }
+      } else {
+        res.status(401).json("Unauthorized: No Access");
+      }
+    });
+
+    app.put("/update-product/:id", verifyToken, async (req, res) => {
+      const token_email = req.token_email;
+      const loggedInUser = await users.findOne({ email: token_email });
+
+      if (loggedInUser.role === "manager" || loggedInUser.role === "admin") {
+        try {
+          const {
+            product_name,
+            product_description,
+            category,
+            price,
+            available_quantity,
+            min_order,
+            images,
+            payment,
+          } = req.body;
+
+          const id = req.params.id;
+          const product = {
+            product_name,
+            product_description,
+            category,
+            price,
+            available_quantity,
+            min_order,
+            images,
+            payment,
+            onHomePage: false,
+          };
+
+          await products.updateOne(
+            { _id: new ObjectId(id) },
+            { $set: product }
+          );
+          res.status(200).json("Product Updated");
+        } catch (error) {
+          res.status(400).json(error);
+        }
+      } else {
+        res.status(401).json("Unauthorized: No Access");
+      }
+    });
+
+    // Buyer Routes
+    app.get("/products-homepage", async (req, res) => {
+      try {
+        const productsData = await products.find().toArray();
+        res.status(200).json(productsData.filter(product => product.onHomePage === true));
+      } catch (error) {
+        res.status(400).json(error.message);
+      }
+    });
+
+    app.post("/order/:id",verifyToken, async (req, res) => { 
+      const token_email = req.token_email;
+      const loggedInUser = await users.findOne({ email: token_email });
+      if(loggedInUser.status === "approve"){
+        try {
+          
+        } catch (error) {
+          res.status(400).json(error);
+        }
+
+     } else{
+       res.status(401).json("Account not approved");
+     }
+  })
   } catch (error) {
     console.error("Error connecting to MongoDB:", error);
   }
