@@ -121,7 +121,7 @@ const run = async () => {
     // Admin Routes
     app.patch("/admin/user-status/:email", verifyToken, async (req, res) => {
       const email = decodeURIComponent(req.params.email);
-      const { status } = req.body;
+      const { status , reason , feedback } = req.body;
       const token_email = req.token_email;
       const user = await users.findOne({ email });
       const loggedInUser = await users.findOne({ email: token_email });
@@ -130,7 +130,8 @@ const run = async () => {
         return;
       }
       if (loggedInUser.role == "admin") {
-        await users.updateOne({ email }, { $set: { status } });
+  
+        await users.updateOne({ email }, { $set: { status ,  reason, feedback } });
         res.status(200).json("User status updated");
       }
     });
@@ -240,6 +241,7 @@ const run = async () => {
               {},
               {
                 projection: {
+                  _id: 1,
                   product_name: 1,
                   price: 1,
                   images: 1,
@@ -340,6 +342,7 @@ const run = async () => {
               { status: {$in: ["pending" , "rejected"]} },
               {
                 projection: {
+                  _id: 1,
                   product_name: 1,
                   qty: 1,
                   email: 1,
@@ -557,6 +560,7 @@ const run = async () => {
             product_name: 1,
             status: 1,
             paymentStatus: 1,
+            qty: 1,
           },
         }).toArray();
         res.status(200).json(ordersData);
