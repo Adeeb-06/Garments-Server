@@ -233,7 +233,7 @@ const run = async () => {
     app.get("/products-management", verifyToken, async (req, res) => {
       const token_email = req.token_email;
       const loggedInUser = await users.findOne({ email: token_email });
-      if (loggedInUser.role == "manager" || "admin") {
+      if (loggedInUser.role === "manager" || loggedInUser.role === "admin") {
         try {
           const productsData = await products
             .find(
@@ -244,6 +244,7 @@ const run = async () => {
                   price: 1,
                   images: 1,
                   payment: 1,
+                  onHomePage: 1,
                 },
               }
             )
@@ -542,6 +543,27 @@ const run = async () => {
       }
       res.send(false);
     })
+
+    app.get("/buyer/all-orders/:email", verifyToken , async (req, res) => {
+      const email = decodeURIComponent(req.params.email);
+      const user = await users.findOne({ email });
+      if (!user) {
+        res.status(404).json("User not found");
+        return;
+      }
+      try {
+        const ordersData = await orders.find({ email } , {
+          projection: {
+            product_name: 1,
+            status: 1,
+            paymentStatus: 1,
+          },
+        }).toArray();
+        res.status(200).json(ordersData);
+      } catch (error) {
+        res.status(400).json(error.message);
+      }
+    });
 
 
   } catch (error) {
