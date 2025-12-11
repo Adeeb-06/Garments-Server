@@ -3,8 +3,13 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { MongoClient, ObjectId, ServerApiVersion } from "mongodb";
 import admin from "firebase-admin";
-
 dotenv.config();
+
+import Stripe from "stripe";
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
+
 const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString(
   "utf8"
 );
@@ -57,6 +62,7 @@ const run = async () => {
     const db = client.db("garments");
     const users = db.collection("users");
     const products = db.collection("products");
+    const orders = db.collection("orders");
 
     //Auth Routes
     app.post("/register", async (req, res) => {
@@ -188,6 +194,8 @@ const run = async () => {
             images,
             payment,
             onHomePage: false,
+            createdBy: token_email,
+            createdAt: new Date(),
           };
           await products.insertOne(product);
           res.status(201).json("Product Created");
@@ -287,30 +295,131 @@ const run = async () => {
       }
     });
 
-    // Buyer Routes
-    app.get("/products-homepage", async (req, res) => {
+    app.get("/products", async (req, res) => {
       try {
         const productsData = await products.find().toArray();
-        res.status(200).json(productsData.filter(product => product.onHomePage === true));
+        res.status(200).json(productsData);
       } catch (error) {
         res.status(400).json(error.message);
       }
     });
 
-    app.post("/order/:id",verifyToken, async (req, res) => { 
+    // Buyer Routes
+    app.get("/products-homepage", async (req, res) => {
+      try {
+        const productsData = await products
+          .find({
+            onHomePage: true,
+          })
+          .limit(6)
+          .toArray();
+        res.status(200).json(productsData);
+      } catch (error) {
+        res.status(400).json(error.message);
+      }
+    });
+
+    app.post("/order/:id", verifyToken, async (req, res) => {
       const token_email = req.token_email;
       const loggedInUser = await users.findOne({ email: token_email });
-      if(loggedInUser.status === "approve"){
+      if (loggedInUser.status === "approve") {
         try {
-          
+          const { product_id, product_name, qty,name, email, deliveryAddress, orderPrice , additionalNotes, contactNumber , paymentMethod  } = req.body;
+          const product = await products.findOne({ _id: new ObjectId(product_id) });
+          if (!product) {
+            res.status(404).json("Product not found");
+            return;
+          }
+          const orderData = {
+            product_id,
+            product_name,
+            qty,
+            name,
+            email,
+            deliveryAddress,
+            orderPrice,
+            additionalNotes,
+            paymentStatus:"pending",
+            contactNumber,
+            paymentMethod,
+            createdAt: new Date(),
+          };
+          await orders.insertOne(orderData);
+          res.status(201).json( orderData  , "Order Created");
         } catch (error) {
           res.status(400).json(error);
         }
+      } else {
+        res.status(401).json("Account not approved");
+      }
+    });
 
-     } else{
-       res.status(401).json("Account not approved");
-     }
-  })
+    app.get("/order/:id", verifyToken, async (req, res) => {
+      try {
+        const orderData = await orders.findOne({ _id: new ObjectId(req.params.id)});
+      
+        res.status(200).json(orderData);
+      } catch (error) {
+        res.status(400).json(error);
+      }
+    });
+
+    
+
+    app.post("/stripe-payment", async (req, res) => {
+      const paymentInfo = req.body;
+      const amount = parseInt(paymentInfo.price) * 100;
+      const session = await stripe.checkout.sessions.create({
+        line_items: [
+          {
+            price_data: {
+              currency: "usd",
+              unit_amount: amount,
+              product_data: {
+                name: paymentInfo.product_name,
+              },
+            },
+            quantity: 1,
+          },
+        ],
+        mode: "payment",
+        metadata: {
+          productId: paymentInfo.product_id,
+          orderId: paymentInfo.order_id,
+        },
+        customer_email: paymentInfo.email,
+        success_url: `${process.env.YOUR_DOMAIN}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.YOUR_DOMAIN}/payment-cancel`,
+      });
+      res.send({url : session.url});
+    });
+
+    app.patch("/payment-success", async (req, res) => {
+      const session_id = req.query.session_id;
+
+      const session = await stripe.checkout.sessions.retrieve(session_id);
+
+       console.log(session.amount_subtotal)
+      if (session.payment_status === "paid") {
+        const orderID = session.metadata.orderId;
+        const order = await orders.findOne({ _id: new ObjectId(orderID) });
+        if (!order) {
+          res.status(404).json("Order not found");
+          return;
+        }
+       const result = await orders.updateOne(
+          { _id: new ObjectId(orderID) },
+          { $set: { paymentStatus: "paid" } }
+        );
+        if (result.acknowledged) {
+
+          res.status(200).json(session , "Payment Successful");
+        }
+      }
+      res.send(false);
+    })
+
+
   } catch (error) {
     console.error("Error connecting to MongoDB:", error);
   }
