@@ -167,6 +167,31 @@ const run = async () => {
       }
     });
 
+    app.get("/admin/products", verifyToken, async (req, res) => {
+      const token_email = req.token_email;
+      const loggedInUser = await users.findOne({ email: token_email });
+      if (loggedInUser.role == "admin") {
+        try {
+          const productsData = await products
+            .find(
+              {},
+              {
+                projection: {
+                  product_name: 1,
+                  orderPrice: 1,
+                  email: 1,
+                  payment: 1,
+                },
+              }
+            )
+            .toArray();
+          res.status(200).json(productsData);
+        } catch (error) {
+          res.status(400).json(error.message);
+        }
+      }
+    });
+
     //Manager Routes
     app.post("/manager/create-product", verifyToken, async (req, res) => {
       const token_email = req.token_email;
@@ -304,6 +329,103 @@ const run = async () => {
       }
     });
 
+    app.get("/manager/pending-orders", verifyToken, async (req, res) => {
+      const token_email = req.token_email;
+      const loggedInUser = await users.findOne({ email: token_email });
+      if (loggedInUser.role == "manager") {
+        try {
+          const ordersData = await orders
+            .find(
+              { status: {$in: ["pending" , "rejected"]} },
+              {
+                projection: {
+                  product_name: 1,
+                  qty: 1,
+                  email: 1,
+                  status: 1,
+                  createdAt: 1,
+                },
+              }
+            )
+            .toArray();
+          res.status(200).json(ordersData);
+        } catch (error) {
+          res.status(400).json(error.message);
+        }
+      }
+    })
+
+    app.patch("/manager/approve-order/:id", verifyToken, async (req, res) => {
+      const token_email = req.token_email;
+      const loggedInUser = await users.findOne({ email: token_email });
+      if (loggedInUser.role == "manager") {
+        try {
+          const id = req.params.id;
+          const order = await orders.findOne({ _id: new ObjectId(id) });
+          if (!order) {
+            res.status(404).json("Order not found");
+            return;
+          }
+          await orders.updateOne(
+            { _id: new ObjectId(id) },
+            { $set: { status: "approved" , approvedDate: new Date() } }
+          );
+          
+          res.status(200).json("Order Approved");
+        } catch (error) {
+          res.status(400).json(error);
+        }
+      }
+    });
+
+    app.patch("/manager/reject-order/:id", verifyToken, async (req, res) => {
+      const token_email = req.token_email;
+      const loggedInUser = await users.findOne({ email: token_email });
+      if (loggedInUser.role == "manager") {
+        try {
+          const id = req.params.id;
+          const order = await orders.findOne({ _id: new ObjectId(id) });
+          if (!order) {
+            res.status(404).json("Order not found");
+            return;
+          }
+          await orders.updateOne(
+            { _id: new ObjectId(id) },
+            { $set: { status: "rejected"  } }
+          );
+          
+          res.status(200).json("Order Rejected");
+        } catch (error) {
+          res.status(400).json(error);
+        }
+      }
+    });
+
+    app.get("/manager/approved-orders", verifyToken, async (req, res) => {
+      const token_email = req.token_email;
+      const loggedInUser = await users.findOne({ email: token_email });
+      if (loggedInUser.role == "manager") {
+        try {
+          const ordersData = await orders
+            .find(
+              { status: "approved" },
+              {
+                projection: {
+                  product_name: 1,
+                  qty: 1,
+                  email: 1,
+                  approvedDate: 1,
+                },
+              }
+            )
+            .toArray();
+          res.status(200).json(ordersData);
+        } catch (error) {
+          res.status(400).json(error.message);
+        }
+      }
+    });
+
     // Buyer Routes
     app.get("/products-homepage", async (req, res) => {
       try {
@@ -324,7 +446,7 @@ const run = async () => {
       const loggedInUser = await users.findOne({ email: token_email });
       if (loggedInUser.status === "approve") {
         try {
-          const { product_id, product_name, qty,name, email, deliveryAddress, orderPrice , additionalNotes, contactNumber , paymentMethod  } = req.body;
+          const { product_id, product_name, qty,firstName,lastName, email, deliveryAddress, orderPrice , additionalNotes, contactNumber , paymentMethod  } = req.body;
           const product = await products.findOne({ _id: new ObjectId(product_id) });
           if (!product) {
             res.status(404).json("Product not found");
@@ -334,7 +456,8 @@ const run = async () => {
             product_id,
             product_name,
             qty,
-            name,
+            firstName,
+            lastName,
             email,
             deliveryAddress,
             orderPrice,
@@ -342,6 +465,7 @@ const run = async () => {
             paymentStatus:"pending",
             contactNumber,
             paymentMethod,
+            status:"pending",
             createdAt: new Date(),
           };
           await orders.insertOne(orderData);
