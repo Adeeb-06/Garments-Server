@@ -450,6 +450,21 @@ const run = async () => {
       return res.status(404).json("Order not found");
     }
 
+
+     if(status === "Shipped"){
+       await orders.updateOne(
+        { _id: new ObjectId(id) },
+        {
+          $push: {
+            tracking: {
+              status,
+              location,
+              createdAt: new Date(),
+              paymentStatus: "paid"
+            },
+          },
+        });
+     }
     await orders.updateOne(
       { _id: new ObjectId(id) },
       {
@@ -458,6 +473,7 @@ const run = async () => {
             status,
             location,
             createdAt: new Date(),
+            
           },
         },
       }
