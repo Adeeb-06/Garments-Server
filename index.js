@@ -63,6 +63,7 @@ const run = async () => {
     const users = db.collection("users");
     const products = db.collection("products");
     const orders = db.collection("orders");
+    const tracking = db.collection("tracking");
 
     //Auth Routes
     app.post("/register", async (req, res) => {
@@ -415,10 +416,12 @@ const run = async () => {
               { status: "approved" },
               {
                 projection: {
+                  _id: 1,
                   product_name: 1,
                   qty: 1,
                   email: 1,
                   approvedDate: 1,
+                  tracking: 1,
                 },
               }
             )
@@ -429,6 +432,43 @@ const run = async () => {
         }
       }
     });
+ 
+   app.patch("/tracking-order/:id", verifyToken, async (req, res) => {
+  const token_email = req.token_email;
+  const loggedInUser = await users.findOne({ email: token_email });
+
+  if (loggedInUser.role !== "manager") {
+    return res.status(403).json("Forbidden");
+  }
+
+  try {
+    const id = req.params.id;
+    const { status, location } = req.body;
+
+    const order = await orders.findOne({ _id: new ObjectId(id) });
+    if (!order) {
+      return res.status(404).json("Order not found");
+    }
+
+    await orders.updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $push: {
+          tracking: {
+            status,
+            location,
+            createdAt: new Date(),
+          },
+        },
+      }
+    );
+
+    res.status(200).json("Tracking updated");
+  } catch (error) {
+    res.status(400).json(error.message);
+  }
+});
+
 
     // Buyer Routes
     app.get("/products-homepage", async (req, res) => {
@@ -484,8 +524,8 @@ const run = async () => {
 
     app.get("/order/:id", verifyToken, async (req, res) => {
       try {
-        const orderData = await orders.findOne({ _id: new ObjectId(req.params.id)});
-      
+        const id = req.params.id;
+        const orderData = await orders.findOne({ _id: new ObjectId(id)});
         res.status(200).json(orderData);
       } catch (error) {
         res.status(400).json(error);
