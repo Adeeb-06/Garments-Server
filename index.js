@@ -545,6 +545,7 @@ const run = async () => {
               projection: {
                 images: 1,
                 product_name: 1,
+                product_description:1,
                 category: 1,
                 price: 1,
                 available_quantity: 1,
@@ -720,6 +721,7 @@ const run = async () => {
               projection: {
                 images: 1,
                 product_name: 1,
+                product_description:1,
                 category: 1,
                 price: 1,
                 available_quantity: 1,
@@ -731,6 +733,30 @@ const run = async () => {
         res.status(200).json(productsData);
       } catch (error) {
         res.status(400).json(error.message);
+      }
+    });
+
+
+    app.delete("/delete-order/:id", verifyToken, async (req, res) => {
+      const token_email = req.token_email;
+      const loggedInUser = await users.findOne({ email: token_email });
+      if (loggedInUser.role === "buyer") {
+        try {
+          const id = req.params.id;
+          const order = await orders.findOne({ _id: new ObjectId(id) });
+          if (!order) {
+            res.status(404).json("Order not found");
+            return;
+          }
+          if(order.status === "approved"){
+            res.status(400).json("Order already approved");
+            return;
+          }
+          await orders.findOneAndDelete({ _id: new ObjectId(id) });
+          res.status(200).json({message: "Order deleted"});
+        } catch (error) {
+          res.status(400).json(error);
+        }
       }
     });
   } catch (error) {
