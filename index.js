@@ -9,7 +9,6 @@ import Stripe from "stripe";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-
 const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString(
   "utf8"
 );
@@ -122,7 +121,7 @@ const run = async () => {
     // Admin Routes
     app.patch("/admin/user-status/:email", verifyToken, async (req, res) => {
       const email = decodeURIComponent(req.params.email);
-      const { status , reason , feedback } = req.body;
+      const { status, reason, feedback } = req.body;
       const token_email = req.token_email;
       const user = await users.findOne({ email });
       const loggedInUser = await users.findOne({ email: token_email });
@@ -131,8 +130,10 @@ const run = async () => {
         return;
       }
       if (loggedInUser.role == "admin") {
-  
-        await users.updateOne({ email }, { $set: { status ,  reason, feedback } });
+        await users.updateOne(
+          { email },
+          { $set: { status, reason, feedback } }
+        );
         res.status(200).json("User status updated");
       }
     });
@@ -144,6 +145,32 @@ const run = async () => {
         return;
       }
       res.status(200).json(user);
+    });
+
+    app.get("/admin/all-orders", verifyToken, async (req, res) => {
+      const token_email = req.token_email;
+      const loggedInUser = await users.findOne({ email: token_email });
+      if (loggedInUser.role == "admin") {
+        try {
+          const orderData = await orders
+            .find(
+              {},
+              {
+                projection: {
+                  _id: 1,
+                  product_name: 1,
+                  qty: 1,
+                  email: 1,
+                  status: 1,
+                },
+              }
+            )
+            .toArray();
+          res.status(200).json(orderData);
+        } catch (error) {
+          res.status(400).json(error.message);
+        }
+      }
     });
 
     app.patch("/admin/product-status/:id", verifyToken, async (req, res) => {
@@ -179,10 +206,13 @@ const run = async () => {
               {},
               {
                 projection: {
+                  images:1,
                   product_name: 1,
-                  orderPrice: 1,
-                  email: 1,
+                  price: 1,
+                  createdBy: 1,
+                  category: 1,
                   payment: 1,
+                  onHomePage: 1,
                 },
               }
             )
@@ -226,6 +256,25 @@ const run = async () => {
           };
           await products.insertOne(product);
           res.status(201).json("Product Created");
+        } catch (error) {
+          res.status(400).json(error);
+        }
+      }
+    });
+
+    app.delete("/delete-product/:id", verifyToken, async (req, res) => {
+      const token_email = req.token_email;
+      const loggedInUser = await users.findOne({ email: token_email });
+      if (loggedInUser.role === "manager" || loggedInUser.role === "admin") {
+        try {
+          const id = req.params.id;
+          const product = await products.findOne({ _id: new ObjectId(id) });
+          if (!product) {
+            res.status(404).json("Product not found");
+            return;
+          }
+          await products.findOneAndDelete({ _id: new ObjectId(id) });
+          res.status(200).json({message: "Product deleted"});
         } catch (error) {
           res.status(400).json(error);
         }
@@ -338,9 +387,9 @@ const run = async () => {
       const loggedInUser = await users.findOne({ email: token_email });
       if (loggedInUser.role == "manager") {
         try {
-          const ordersData = await orders
+          const pendingOrdersData = await orders
             .find(
-              { status: {$in: ["pending" , "rejected"]} },
+              { status: { $in: ["pending", "rejected"] } },
               {
                 projection: {
                   _id: 1,
@@ -353,12 +402,12 @@ const run = async () => {
               }
             )
             .toArray();
-          res.status(200).json(ordersData);
+          res.status(200).json(pendingOrdersData);
         } catch (error) {
           res.status(400).json(error.message);
         }
       }
-    })
+    });
 
     app.patch("/manager/approve-order/:id", verifyToken, async (req, res) => {
       const token_email = req.token_email;
@@ -373,9 +422,9 @@ const run = async () => {
           }
           await orders.updateOne(
             { _id: new ObjectId(id) },
-            { $set: { status: "approved" , approvedDate: new Date() } }
+            { $set: { status: "approved", approvedDate: new Date() } }
           );
-          
+
           res.status(200).json("Order Approved");
         } catch (error) {
           res.status(400).json(error);
@@ -396,9 +445,9 @@ const run = async () => {
           }
           await orders.updateOne(
             { _id: new ObjectId(id) },
-            { $set: { status: "rejected"  } }
+            { $set: { status: "rejected" } }
           );
-          
+
           res.status(200).json("Order Rejected");
         } catch (error) {
           res.status(400).json(error);
@@ -411,7 +460,7 @@ const run = async () => {
       const loggedInUser = await users.findOne({ email: token_email });
       if (loggedInUser.role == "manager") {
         try {
-          const ordersData = await orders
+          const approveOrdersData = await orders
             .find(
               { status: "approved" },
               {
@@ -426,73 +475,82 @@ const run = async () => {
               }
             )
             .toArray();
-          res.status(200).json(ordersData);
+          res.status(200).json(approveOrdersData);
         } catch (error) {
           res.status(400).json(error.message);
         }
       }
     });
- 
-   app.patch("/tracking-order/:id", verifyToken, async (req, res) => {
-  const token_email = req.token_email;
-  const loggedInUser = await users.findOne({ email: token_email });
 
-  if (loggedInUser.role !== "manager") {
-    return res.status(403).json("Forbidden");
-  }
+    app.patch("/tracking-order/:id", verifyToken, async (req, res) => {
+      const token_email = req.token_email;
+      const loggedInUser = await users.findOne({ email: token_email });
 
-  try {
-    const id = req.params.id;
-    const { status, location } = req.body;
-
-    const order = await orders.findOne({ _id: new ObjectId(id) });
-    if (!order) {
-      return res.status(404).json("Order not found");
-    }
-
-
-     if(status === "Shipped"){
-       await orders.updateOne(
-        { _id: new ObjectId(id) },
-        {
-          $push: {
-            tracking: {
-              status,
-              location,
-              createdAt: new Date(),
-              paymentStatus: "paid"
-            },
-          },
-        });
-     }
-    await orders.updateOne(
-      { _id: new ObjectId(id) },
-      {
-        $push: {
-          tracking: {
-            status,
-            location,
-            createdAt: new Date(),
-            
-          },
-        },
+      if (loggedInUser.role !== "manager") {
+        return res.status(403).json("Forbidden");
       }
-    );
 
-    res.status(200).json("Tracking updated");
-  } catch (error) {
-    res.status(400).json(error.message);
-  }
-});
+      try {
+        const id = req.params.id;
+        const { status, location } = req.body;
 
+        const order = await orders.findOne({ _id: new ObjectId(id) });
+        if (!order) {
+          return res.status(404).json("Order not found");
+        }
+
+        if (status === "Shipped") {
+          await orders.updateOne(
+            { _id: new ObjectId(id) },
+            {
+              $push: {
+                tracking: {
+                  status,
+                  location,
+                  createdAt: new Date(),
+                  paymentStatus: "paid",
+                },
+              },
+            }
+          );
+        }
+        await orders.updateOne(
+          { _id: new ObjectId(id) },
+          {
+            $push: {
+              tracking: {
+                status,
+                location,
+                createdAt: new Date(),
+              },
+            },
+          }
+        );
+
+        res.status(200).json("Tracking updated");
+      } catch (error) {
+        res.status(400).json(error.message);
+      }
+    });
 
     // Buyer Routes
     app.get("/products-homepage", async (req, res) => {
       try {
         const productsData = await products
-          .find({
-            onHomePage: true,
-          })
+          .find(
+            {
+              onHomePage: true,
+            },
+            {
+              projection: {
+                images: 1,
+                product_name: 1,
+                category: 1,
+                price: 1,
+                available_quantity: 1,
+              },
+            }
+          )
           .limit(6)
           .toArray();
         res.status(200).json(productsData);
@@ -506,8 +564,22 @@ const run = async () => {
       const loggedInUser = await users.findOne({ email: token_email });
       if (loggedInUser.status === "approve") {
         try {
-          const { product_id, product_name, qty,firstName,lastName, email, deliveryAddress, orderPrice , additionalNotes, contactNumber , paymentMethod  } = req.body;
-          const product = await products.findOne({ _id: new ObjectId(product_id) });
+          const {
+            product_id,
+            product_name,
+            qty,
+            firstName,
+            lastName,
+            email,
+            deliveryAddress,
+            orderPrice,
+            additionalNotes,
+            contactNumber,
+            paymentMethod,
+          } = req.body;
+          const product = await products.findOne({
+            _id: new ObjectId(product_id),
+          });
           if (!product) {
             res.status(404).json("Product not found");
             return;
@@ -522,16 +594,22 @@ const run = async () => {
             deliveryAddress,
             orderPrice,
             additionalNotes,
-            paymentStatus:"pending",
+            paymentStatus: "pending",
             contactNumber,
             paymentMethod,
-            status:"pending",
+            status: "pending",
             createdAt: new Date(),
           };
           await orders.insertOne(orderData);
-          res.status(201).json( orderData  , "Order Created");
+
+          await products.updateOne(
+            { _id: new ObjectId(product_id) },
+            { $set: { available_quantity: product.available_quantity - qty } }
+          );
+
+          res.status(201).json(orderData, "Order Created");
         } catch (error) {
-          res.status(400).json(error);
+          res.status(400).json(error.message);
         }
       } else {
         res.status(401).json("Account not approved");
@@ -541,14 +619,12 @@ const run = async () => {
     app.get("/order/:id", verifyToken, async (req, res) => {
       try {
         const id = req.params.id;
-        const orderData = await orders.findOne({ _id: new ObjectId(id)});
+        const orderData = await orders.findOne({ _id: new ObjectId(id) });
         res.status(200).json(orderData);
       } catch (error) {
         res.status(400).json(error);
       }
     });
-
-    
 
     app.post("/stripe-payment", async (req, res) => {
       const paymentInfo = req.body;
@@ -575,15 +651,15 @@ const run = async () => {
         success_url: `${process.env.YOUR_DOMAIN}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${process.env.YOUR_DOMAIN}/payment-cancel`,
       });
-      res.send({url : session.url});
+      res.send({ url: session.url });
     });
 
     app.patch("/payment-success", async (req, res) => {
       const session_id = req.query.session_id;
 
       const session = await stripe.checkout.sessions.retrieve(session_id);
-
-       console.log(session.amount_subtotal)
+   
+      console.log(session.amount_subtotal);
       if (session.payment_status === "paid") {
         const orderID = session.metadata.orderId;
         const order = await orders.findOne({ _id: new ObjectId(orderID) });
@@ -591,41 +667,72 @@ const run = async () => {
           res.status(404).json("Order not found");
           return;
         }
-       const result = await orders.updateOne(
-          { _id: new ObjectId(orderID) },
-          { $set: { paymentStatus: "paid" } }
-        );
-        if (result.acknowledged) {
-
-          res.status(200).json(session , "Payment Successful");
+        if (order.paymentStatus === "pending") {
+          const result = await orders.updateOne(
+            { _id: new ObjectId(orderID) },
+            { $set: { paymentStatus: "paid" } }
+          );
+          if (result.acknowledged) {
+            res.status(200).json(session, "Payment Successful");
+          }
         }
       }
-      res.send(false);
-    })
+      res.send(session , "false");
+    });
 
-    app.get("/buyer/all-orders/:email", verifyToken , async (req, res) => {
-      const email = decodeURIComponent(req.params.email);
-      const user = await users.findOne({ email });
+    app.get("/buyer/all-orders/:email", verifyToken, async (req, res) => {
+      const buyerEmail = decodeURIComponent(req.params.email);
+      const user = await users.findOne({ email: buyerEmail });
       if (!user) {
         res.status(404).json("User not found");
         return;
       }
       try {
-        const ordersData = await orders.find({ email } , {
-          projection: {
-            product_name: 1,
-            status: 1,
-            paymentStatus: 1,
-            qty: 1,
-          },
-        }).toArray();
+        const ordersData = await orders
+          .find(
+            { email : buyerEmail },
+            {
+              projection: {
+                product_name: 1,
+                status: 1,
+                paymentStatus: 1,
+                orderPrice: 1,
+                email: 1,
+                product_id: 1,
+                _id: 1,
+                qty: 1,
+              },
+            }
+          )
+          .toArray();
         res.status(200).json(ordersData);
       } catch (error) {
         res.status(400).json(error.message);
       }
     });
 
-
+    app.get("/all-products", async (req, res) => {
+      try {
+        const productsData = await products
+          .find(
+            {},
+            {
+              projection: {
+                images: 1,
+                product_name: 1,
+                category: 1,
+                price: 1,
+                available_quantity: 1,
+                
+              },
+            }
+          )
+          .toArray();
+        res.status(200).json(productsData);
+      } catch (error) {
+        res.status(400).json(error.message);
+      }
+    });
   } catch (error) {
     console.error("Error connecting to MongoDB:", error);
   }
