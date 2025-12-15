@@ -375,7 +375,7 @@ const run = async () => {
 
     app.get("/products", async (req, res) => {
       try {
-        const productsData = await products.find().toArray();
+        const productsData = await products.find({ createdBy: token_email }).toArray();
         res.status(200).json(productsData);
       } catch (error) {
         res.status(400).json(error.message);
@@ -389,7 +389,7 @@ const run = async () => {
         try {
           const pendingOrdersData = await orders
             .find(
-              { status: { $in: ["pending", "rejected"] } },
+              { status: { $in: ["pending", "rejected"] }, productManager: token_email },
               {
                 projection: {
                   _id: 1,
@@ -462,7 +462,7 @@ const run = async () => {
         try {
           const approveOrdersData = await orders
             .find(
-              { status: "approved" },
+              { status: "approved" , productManager: token_email },
               {
                 projection: {
                   _id: 1,
@@ -599,6 +599,7 @@ const run = async () => {
             contactNumber,
             paymentMethod,
             status: "pending",
+            productManager: product.createdBy,
             createdAt: new Date(),
           };
           await orders.insertOne(orderData);
