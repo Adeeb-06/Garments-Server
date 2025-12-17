@@ -375,6 +375,7 @@ const run = async () => {
 
     app.get("/products", async (req, res) => {
       try {
+        const token_email = req.token_email;
         const productsData = await products.find({ createdBy: token_email }).toArray();
         res.status(200).json(productsData);
       } catch (error) {
