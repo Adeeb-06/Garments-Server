@@ -20,7 +20,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(
   cors({
-    origin: ["http://localhost:5173" , "https://garment-627fe.web.app"],
+    origin: ["http://localhost:5173", "https://garment-627fe.web.app"],
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
@@ -151,6 +151,9 @@ const run = async () => {
       const loggedInUser = await users.findOne({ email: token_email });
       if (loggedInUser.role == "admin") {
         try {
+          const page = req.query.page || 1;
+          const limit = req.query.limit || 10;
+          const skip = (page - 1) * limit;
           const orderData = await orders
             .find(
               {},
@@ -164,8 +167,18 @@ const run = async () => {
                 },
               }
             )
+            .skip(skip)
+            .limit(limit)
             .toArray();
-          res.status(200).json(orderData);
+
+          const totalCount = await orders.countDocuments({});
+
+          res.status(200).json({
+            data: orderData,
+            total: totalCount,
+            page,
+            totalPages: Math.ceil(totalCount / limit),
+          });
         } catch (error) {
           res.status(400).json(error.message);
         }
@@ -205,7 +218,7 @@ const run = async () => {
               {},
               {
                 projection: {
-                  images:1,
+                  images: 1,
                   product_name: 1,
                   price: 1,
                   createdBy: 1,
@@ -273,7 +286,7 @@ const run = async () => {
             return;
           }
           await products.findOneAndDelete({ _id: new ObjectId(id) });
-          res.status(200).json({message: "Product deleted"});
+          res.status(200).json({ message: "Product deleted" });
         } catch (error) {
           res.status(400).json(error);
         }
@@ -375,7 +388,9 @@ const run = async () => {
     app.get("/products", async (req, res) => {
       try {
         const token_email = req.token_email;
-        const productsData = await products.find({ createdBy: token_email }).toArray();
+        const productsData = await products
+          .find({ createdBy: token_email })
+          .toArray();
         res.status(200).json(productsData);
       } catch (error) {
         res.status(400).json(error.message);
@@ -389,7 +404,10 @@ const run = async () => {
         try {
           const pendingOrdersData = await orders
             .find(
-              { status: { $in: ["pending", "rejected"] }, productManager: token_email },
+              {
+                status: { $in: ["pending", "rejected"] },
+                productManager: token_email,
+              },
               {
                 projection: {
                   _id: 1,
@@ -462,7 +480,7 @@ const run = async () => {
         try {
           const approveOrdersData = await orders
             .find(
-              { status: "approved" , productManager: token_email },
+              { status: "approved", productManager: token_email },
               {
                 projection: {
                   _id: 1,
@@ -545,7 +563,7 @@ const run = async () => {
               projection: {
                 images: 1,
                 product_name: 1,
-                product_description:1,
+                product_description: 1,
                 category: 1,
                 price: 1,
                 available_quantity: 1,
@@ -660,7 +678,7 @@ const run = async () => {
       const session_id = req.query.session_id;
 
       const session = await stripe.checkout.sessions.retrieve(session_id);
-   
+
       console.log(session.amount_subtotal);
       if (session.payment_status === "paid") {
         const orderID = session.metadata.orderId;
@@ -679,7 +697,7 @@ const run = async () => {
           }
         }
       }
-      res.send(session , "false");
+      res.send(session, "false");
     });
 
     app.get("/buyer/all-orders/:email", verifyToken, async (req, res) => {
@@ -692,7 +710,7 @@ const run = async () => {
       try {
         const ordersData = await orders
           .find(
-            { email : buyerEmail },
+            { email: buyerEmail },
             {
               projection: {
                 product_name: 1,
@@ -722,11 +740,10 @@ const run = async () => {
               projection: {
                 images: 1,
                 product_name: 1,
-                product_description:1,
+                product_description: 1,
                 category: 1,
                 price: 1,
                 available_quantity: 1,
-                
               },
             }
           )
@@ -736,7 +753,6 @@ const run = async () => {
         res.status(400).json(error.message);
       }
     });
-
 
     app.delete("/delete-order/:id", verifyToken, async (req, res) => {
       const token_email = req.token_email;
@@ -749,12 +765,12 @@ const run = async () => {
             res.status(404).json("Order not found");
             return;
           }
-          if(order.status === "approved"){
+          if (order.status === "approved") {
             res.status(400).json("Order already approved");
             return;
           }
           await orders.findOneAndDelete({ _id: new ObjectId(id) });
-          res.status(200).json({message: "Order deleted"});
+          res.status(200).json({ message: "Order deleted" });
         } catch (error) {
           res.status(400).json(error);
         }
