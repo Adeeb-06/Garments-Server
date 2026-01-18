@@ -336,7 +336,8 @@ const run = async () => {
           res.status(200).json(product);
         } catch (error) {
           res.status(400).json(error);
-        
+        }
+      
     });
 
     app.put("/update-product/:id", verifyToken, async (req, res) => {
