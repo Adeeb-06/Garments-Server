@@ -325,9 +325,7 @@ const run = async () => {
     });
 
     app.get("/product/:id", async (req, res) => {
-      const token_email = req.token_email;
-      const loggedInUser = await users.findOne({ email: token_email });
-      if (loggedInUser.role == "manager" || "admin") {
+
         try {
           const id = req.params.id;
           const product = await products.findOne({ _id: new ObjectId(id) });
@@ -338,10 +336,7 @@ const run = async () => {
           res.status(200).json(product);
         } catch (error) {
           res.status(400).json(error);
-        }
-      } else {
-        res.status(401).json("Unauthorized: No Access");
-      }
+        
     });
 
     app.put("/update-product/:id", verifyToken, async (req, res) => {
