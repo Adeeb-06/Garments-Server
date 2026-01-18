@@ -324,7 +324,7 @@ const run = async () => {
       }
     });
 
-    app.get("/product/:id", verifyToken, async (req, res) => {
+    app.get("/product/:id", async (req, res) => {
       const token_email = req.token_email;
       const loggedInUser = await users.findOne({ email: token_email });
       if (loggedInUser.role == "manager" || "admin") {
